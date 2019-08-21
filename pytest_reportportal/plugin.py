@@ -2,19 +2,15 @@
 # and/or modify it under the terms of the GPL licence
 
 import logging
+import time
+
+import _pytest.logging
 import dill as pickle
 import pytest
-import time
-from pytest_reportportal import LAUNCH_WAIT_TIMEOUT
-from .service import PyTestServiceClass
-from .listener import RPReportListener
 
-try:
-    # This try/except can go away once we support pytest >= 3.3
-    import _pytest.logging
-    PYTEST_HAS_LOGGING_PLUGIN = True
-except ImportError:
-    PYTEST_HAS_LOGGING_PLUGIN = False
+from pytest_reportportal import LAUNCH_WAIT_TIMEOUT
+from .listener import RPReportListener
+from .service import PyTestServiceClass
 
 log = logging.getLogger(__name__)
 
@@ -27,6 +23,7 @@ def is_master(config):
     return not hasattr(config, 'slaveinput')
 
 
+# noinspection PyProtectedMember
 @pytest.mark.optionalhook
 def pytest_configure_node(node):
     if node.config._reportportal_configured is False:
@@ -35,6 +32,7 @@ def pytest_configure_node(node):
     node.slaveinput['py_test_service'] = pickle.dumps(node.config.py_test_service)
 
 
+# noinspection PyProtectedMember
 def pytest_sessionstart(session):
     if session.config.getoption('--collect-only', default=False) is True:
         return
@@ -66,6 +64,7 @@ def pytest_sessionstart(session):
             wait_launch(session.config.py_test_service.RP.rp_client)
 
 
+# noinspection PyProtectedMember,PyUnusedLocal
 @pytest.hookimpl(trylast=True)
 def pytest_collection_modifyitems(session, config, items):
     if session.config._reportportal_configured is False:
@@ -84,12 +83,11 @@ def pytest_collection_modifyitems(session, config, items):
     items.sort(key=lambda f: (f.fspath, f.parent.name))
 
 
+# noinspection PyProtectedMember
 def pytest_collection_finish(session):
     if session.config.getoption('--collect-only', default=False) is True:
         return
-
-    if session.config._reportportal_configured is False:
-        # Stop now if the plugin is not properly configured
+    if not session.config._reportportal_configured:  # Stop now if the plugin is not properly configured.
         return
 
     session.config.py_test_service.collect_tests(session)
@@ -103,25 +101,18 @@ def wait_launch(rp_client):
         time.sleep(1)
 
 
+# noinspection PyProtectedMember
 def pytest_sessionfinish(session):
-    if session.config.getoption('--collect-only', default=False) is True:
+    if session.config.getoption('--collect-only', default=False):
         return
-
-    if session.config._reportportal_configured is False:
-        # Stop now if the plugin is not properly configured
+    if not session.config.option.rp_enabled or not session.config._reportportal_configured:
         return
-
-    if not session.config.option.rp_enabled:
-        return
-
-    # FixMe: currently method of RP api takes the string parameter
-    # so it is hardcoded
     if is_master(session.config):
         session.config.py_test_service.finish_launch(status='RP_Launch')
-
     session.config.py_test_service.terminate_service()
 
 
+# noinspection PyProtectedMember,PyProtectedMember
 def pytest_configure(config):
     project = config.getini('rp_project')
     endpoint = config.getini('rp_endpoint')
@@ -142,22 +133,17 @@ def pytest_configure(config):
         config.py_test_service.RP.listener.start()
 
     # set Pytest_Reporter and configure it
-    if PYTEST_HAS_LOGGING_PLUGIN:
-        # This check can go away once we support pytest >= 3.3
-        log_level = _pytest.logging.get_actual_log_level(config, 'rp_log_level')
-        if log_level is None:
-            log_level = logging.NOTSET
-    else:
+    log_level = _pytest.logging.get_actual_log_level(config, 'rp_log_level')
+    if log_level is None:
         log_level = logging.NOTSET
 
-    config._reporter = RPReportListener(config.py_test_service,
-                                        log_level=log_level,
-                                        endpoint=endpoint)
+    config._reporter = RPReportListener(config.py_test_service, log_level=log_level, endpoint=endpoint)
 
     if hasattr(config, '_reporter'):
         config.pluginmanager.register(config._reporter)
 
 
+# noinspection PyProtectedMember
 def pytest_unconfigure(config):
     if config._reportportal_configured is False:
         # Stop now if the plugin is not properly configured
@@ -191,18 +177,18 @@ def pytest_addoption(parser):
         help='Enable ReportPortal plugin'
     )
 
-    if PYTEST_HAS_LOGGING_PLUGIN:
-        group.addoption(
-            '--rp-log-level',
-            dest='rp_log_level',
-            default=None,
-            help='Logging level for automated log records reporting'
-        )
-        parser.addini(
-            'rp_log_level',
-            default=None,
-            help='Logging level for automated log records reporting'
-        )
+    group.addoption(
+        '--rp-log-level',
+        dest='rp_log_level',
+        default=None,
+        help='Logging level for automated log records reporting'
+    )
+
+    parser.addini(
+        'rp_log_level',
+        default=None,
+        help='Logging level for automated log records reporting'
+    )
 
     parser.addini(
         'rp_uuid',

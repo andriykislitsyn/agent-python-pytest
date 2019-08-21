@@ -69,14 +69,15 @@ class PyTestServiceClass(with_metaclass(Singleton, object)):
 
         self.ignore_errors = True
         self.ignored_tags = []
+        self.project_settings = None
+        self.issue_types = None
 
         self._errors = queue.Queue()
         self._loglevels = ('TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR')
         self._hier_parts = {}
         self._item_parts = {}
 
-    def init_service(self, endpoint, project, uuid, log_batch_size,
-                     ignore_errors, ignored_tags, verify_ssl=True):
+    def init_service(self, endpoint, project, uuid, log_batch_size, ignore_errors, ignored_tags):
         self._errors = queue.Queue()
         if self.RP is None:
             self.ignore_errors = ignore_errors
@@ -84,20 +85,18 @@ class PyTestServiceClass(with_metaclass(Singleton, object)):
                 self.ignored_tags = list(set(ignored_tags).union({'parametrize'}))
             else:
                 self.ignored_tags = ignored_tags
-            log.debug('ReportPortal - Init service: endpoint=%s, '
-                      'project=%s, uuid=%s', endpoint, project, uuid)
+            log.debug('ReportPortal - Init service: endpoint=%s, project=%s, uuid=%s', endpoint, project, uuid)
             self.RP = ReportPortalServiceAsync(
                 endpoint=endpoint,
                 project=project,
                 token=uuid,
                 error_handler=self.async_error_handler,
-                log_batch_size=log_batch_size  # ,
-                # verify_ssl=verify_ssl
+                log_batch_size=log_batch_size
             )
             if self.RP and hasattr(self.RP.rp_client, "get_project_settings"):
-                self.project_settiings = self.RP.rp_client.get_project_settings()
+                self.project_settings = self.RP.rp_client.get_project_settings()
             else:
-                self.project_settiings = None
+                self.project_settings = None
             self.issue_types = self.get_issue_types()
         else:
             log.debug('The pytest is already initialized')
@@ -128,7 +127,7 @@ class PyTestServiceClass(with_metaclass(Singleton, object)):
             'mode': mode,
             'tags': tags
         }
-        log.debug('ReportPortal - Start launch: equest_body=%s', sl_pt)
+        log.debug('ReportPortal - Start launch: request_body=%s', sl_pt)
         req_data = self.RP.start_launch(**sl_pt)
         log.debug('ReportPortal - Launch started: response_body=%s', req_data)
 
@@ -254,7 +253,7 @@ class PyTestServiceClass(with_metaclass(Singleton, object)):
             log.debug('ReportPortal - End TestSuite: request_body=%s', payload)
             self.RP.finish_test_item(**payload)
 
-    def finish_launch(self, launch=None, status='rp_launch'):
+    def finish_launch(self, status='rp_launch'):
         self._stop_if_necessary()
         if self.RP is None:
             return
@@ -297,11 +296,11 @@ class PyTestServiceClass(with_metaclass(Singleton, object)):
 
     def get_issue_types(self):
         issue_types = {}
-        if not self.project_settiings:
+        if not self.project_settings:
             return issue_types
 
         for item_type in ("AUTOMATION_BUG", "PRODUCT_BUG", "SYSTEM_ISSUE", "NO_DEFECT", "TO_INVESTIGATE"):
-            for item in self.project_settiings["subTypes"][item_type]:
+            for item in self.project_settings["subTypes"][item_type]:
                 issue_types[item["shortName"]] = item["locator"]
 
         return issue_types
@@ -408,49 +407,31 @@ class PyTestServiceClass(with_metaclass(Singleton, object)):
 
     @staticmethod
     def _get_item_dirs(item):
-
         root_path = item.session.config.rootdir.strpath
-        dir_path = item.fspath.new(basename="")
+        dir_path = item.fspath.new(basename='')
         rel_dir = dir_path.new(dirname=dir_path.relto(root_path), basename="", drive="")
-
-        dir_list = []
-        for directory in rel_dir.parts(reverse=False):
-            dir_name = directory.basename
-            if dir_name:
-                dir_list.append(dir_name)
-
-        return dir_list
+        return [directory.basename for directory in rel_dir.parts(reverse=False) if directory.basename]
 
     def _get_item_tags(self, item):
-        # Try to extract names of @pytest.mark.* decorators used for test item
-        # and exclude those which present in rp_ignore_tags parameter
-        def get_marker_value(item, keyword):
-            try:
-                marker = item.get_closest_marker(keyword)
-            except AttributeError:
-                # pytest < 3.6
-                marker = item.keywords.get(keyword)
-
-            return "{}:{}".format(keyword, marker.args[0]) \
-                if marker and marker.args else keyword
-
-        try:
-            tags = [get_marker_value(item, k) for k in item.keywords
-                    if item.get_closest_marker(k) is not None
-                    and k not in self.ignored_tags]
-        except AttributeError:
-            # pytest < 3.6
-            tags = [get_marker_value(item, k) for k in item.keywords
-                    if item.get_marker(k) is not None
-                    and k not in self.ignored_tags]
-
+        """
+        Try to extract names of @pytest.mark.* decorators used for test item
+        and exclude those which present in rp_ignore_tags parameter.
+        """
+        tags = [self._get_marker_value(item, k) for k in item.keywords if
+                item.get_closest_marker(k) and k not in self.ignored_tags]
         tags.extend(item.session.config.getini('rp_tests_tags'))
-
         return tags
 
-    def _get_parameters(self, item):
+    @staticmethod
+    def _get_marker_value(item, keyword):
+        marker = item.get_closest_marker(keyword)
+        return f"{keyword}:{marker.args[0]}" if marker and marker.args else keyword
+
+    @staticmethod
+    def _get_parameters(item):
         return item.callspec.params if hasattr(item, 'callspec') else {}
 
+    # noinspection PyProtectedMember
     @staticmethod
     def _get_item_name(test_item):
         name = test_item._rp_name
@@ -458,8 +439,7 @@ class PyTestServiceClass(with_metaclass(Singleton, object)):
             name = name[:256]
             test_item.warn(
                 'C1',
-                'Test node ID was truncated to "{}" because of name size '
-                'constrains on reportportal'.format(name)
+                f'Test node ID was truncated to "{name}" because of name size constrains on reportportal'
             )
         return name
 
