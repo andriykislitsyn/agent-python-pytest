@@ -60,14 +60,9 @@ class Singleton(type):
 class PyTestServiceClass(with_metaclass(Singleton, object)):
 
     def __init__(self):
-        self.RP = None
-        try:
-            pkg_resources.get_distribution('reportportal_client >= 3.2.0')
-            self.RP_SUPPORTS_PARAMETERS = True
-        except pkg_resources.VersionConflict:
-            self.RP_SUPPORTS_PARAMETERS = False
-
-        self.ignore_errors = True
+        self.RP = None     
+        self.RP_SUPPORTS_PARAMETERS: bool = True
+        self.ignore_errors: bool = True
         self.ignored_tags = []
         self.project_settings = None
         self.issue_types = None
@@ -81,10 +76,7 @@ class PyTestServiceClass(with_metaclass(Singleton, object)):
         self._errors = queue.Queue()
         if self.RP is None:
             self.ignore_errors = ignore_errors
-            if self.RP_SUPPORTS_PARAMETERS:
-                self.ignored_tags = list(set(ignored_tags).union({'parametrize'}))
-            else:
-                self.ignored_tags = ignored_tags
+            self.ignored_tags = list(set(ignored_tags).union({'parametrize'}))
             log.debug('ReportPortal - Init service: endpoint=%s, project=%s, uuid=%s', endpoint, project, uuid)
             self.RP = ReportPortalServiceAsync(
                 endpoint=endpoint,
