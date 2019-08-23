@@ -11,7 +11,7 @@ Pytest plugin for reporting test results of Pytest to the 'Reportal Portal'.
 * Configuration
 * Examples
 * Launching
-* Send attachement (screenshots)
+* Send attachment (screenshots)
 * Troubleshooting
 * Copyright Notice
 

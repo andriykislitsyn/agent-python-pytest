@@ -8,7 +8,7 @@ def read_file(fname):
         return f.read()
 
 
-version = '1.0.5'
+version = '2019.08.23'
 tar_url = 'https://github.com/reportportal/agent-python-pytest/tarball/1.0.3'
 
 

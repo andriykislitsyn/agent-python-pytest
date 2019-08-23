@@ -2,8 +2,8 @@ import logging
 import sys
 import traceback
 from time import time
+from typing import Tuple, List
 
-import pkg_resources
 import pytest
 from _pytest.doctest import DoctestItem
 from _pytest.main import Session
@@ -24,8 +24,7 @@ def timestamp():
 def trim_docstring(docstring):
     if not docstring:
         return ''
-    # Convert tabs to spaces (following the normal Python rules)
-    # and split into a list of lines:
+    # Convert tabs to spaces (following the normal Python rules) and split into a list of lines:
     lines = docstring.expandtabs().splitlines()
     # Determine minimum indentation (first line doesn't count):
     indent = sys.maxsize
@@ -60,15 +59,14 @@ class Singleton(type):
 class PyTestServiceClass(with_metaclass(Singleton, object)):
 
     def __init__(self):
-        self.RP = None     
-        self.RP_SUPPORTS_PARAMETERS: bool = True
+        self.RP = None
         self.ignore_errors: bool = True
-        self.ignored_tags = []
+        self.ignored_tags: List[str] = []
         self.project_settings = None
         self.issue_types = None
 
         self._errors = queue.Queue()
-        self._loglevels = ('TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR')
+        self._loglevels: Tuple[str, ...] = ('TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR')
         self._hier_parts = {}
         self._item_parts = {}
 
@@ -127,7 +125,6 @@ class PyTestServiceClass(with_metaclass(Singleton, object)):
         self._stop_if_necessary()
         if self.RP is None:
             return
-
         hier_dirs = False
         hier_module = False
         hier_class = False
@@ -150,29 +147,21 @@ class PyTestServiceClass(with_metaclass(Singleton, object)):
         tests_parts = {}
 
         for item in session.items:
-            # Start collecting test item parts
-            parts = []
-
+            parts = []  # Start collecting test item parts.
             # Hierarchy for directories
             rp_name = self._add_item_hier_parts_dirs(item, hier_dirs, hier_dirs_level, parts, dirs_parts)
-
             # Hierarchy for Module and Class/UnitTestCase
             item_parts = self._get_item_parts(item)
             rp_name = self._add_item_hier_parts_other(item_parts, item, Module, hier_module, parts, rp_name)
             rp_name = self._add_item_hier_parts_other(item_parts, item, Class, hier_class, parts, rp_name)
             rp_name = self._add_item_hier_parts_other(item_parts, item, UnitTestCase, hier_class, parts, rp_name)
-
-            # Hierarchy for parametrized tests
-            if hier_param:
+            if hier_param:  # Hierarchy for parametrized tests
                 rp_name = self._add_item_hier_parts_parametrize(item, parts, tests_parts, rp_name)
-
             # Hierarchy for test itself (Function/TestCaseFunction)
             item._rp_name = rp_name + ("::" if rp_name else "") + item.name
-
             # Result initialization
             for part in parts:
                 part._rp_result = "PASSED"
-
             self._item_parts[item] = parts
             for part in parts:
                 if '_pytest.python.Class' in str(type(part)) and not display_suite_file_name and not hier_module:
@@ -207,11 +196,9 @@ class PyTestServiceClass(with_metaclass(Singleton, object)):
             'description': self._get_item_description(test_item),
             'tags': self._get_item_tags(test_item),
             'start_time': timestamp(),
-            'item_type': 'STEP'
+            'item_type': 'STEP',
+            'parameters': self._get_parameters(test_item),
         }
-        if self.RP_SUPPORTS_PARAMETERS:
-            start_rq['parameters'] = self._get_parameters(test_item)
-
         log.debug('ReportPortal - Start TestItem: request_body=%s', start_rq)
         self.RP.start_test_item(**start_rq)
 
